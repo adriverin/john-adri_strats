@@ -18,7 +18,7 @@ import src.bates_model_parameters as bmod
 # Config
 # ----------------------------
 symbol = 'BTCUSD'
-timeframe = '1m'
+timeframe = '5m'
 parquet_path = f'data/spot/ohlcv_{symbol}_{timeframe}.parquet'
 
 # Test day to compare
@@ -29,9 +29,9 @@ test_end   = pd.Timestamp('2025-07-13', tz='UTC')
 # --- Heston-vs-Jumps weighting knobs ---
 jump_lookback_days = 60          # fit jumps on a short, recent window
 jump_ewma_half_life_days = 7    # faster variance proxy for jump MLE (7–15)
-LAM_CAP_PER_DAY = 0.001            # hard cap on jump intensity per day
-S_CAP = 0.001                     # cap on log-jump std
-SHRINK_JUMPS_IN_SIM = 0.025       # OPTIONAL: scale jump sizes in simulation (0.7–0.9)
+LAM_CAP_PER_DAY = 0.02            # hard cap on jump intensity per day
+S_CAP = 0.02                     # cap on log-jump std
+SHRINK_JUMPS_IN_SIM = 0.85       # OPTIONAL: scale jump sizes in simulation (0.7–0.9)
 
 
 # Training window before test_start
@@ -44,7 +44,7 @@ ewma_half_life_days = 10
 
 
 # 1-minute step in "years" (crypto 24/7)
-DT_Y = 1.0 / (365 * 24 * 60)
+DT_Y = 1.0 * 5 / (365 * 24 * 60)
 
 # Poisson truncation for likelihood (minute λ·dt is tiny; 5–7 is usually fine)
 N_MAX = 7
@@ -65,7 +65,7 @@ def ensure_utc_index(df: pd.DataFrame) -> pd.DataFrame:
 
 def ewma_variance_proxy(r: pd.Series, dt: float, half_life_days: int) -> pd.Series:
     """EWMA proxy for instantaneous variance v_t (annualized)."""
-    steps_per_day = 24 * 60
+    steps_per_day = 24 * 60 / 5
     hl_steps = half_life_days * steps_per_day
     lam = float(np.exp(-np.log(2) / hl_steps))        # smoothing lambda
     alpha = 1.0 - lam                                 # pandas ewm alpha
@@ -98,7 +98,7 @@ vhat_train = ewma_variance_proxy(train_df['r'], DT_Y, ewma_half_life_days)
 heston = hm.estimate_heston_from_prices(
     train_df['close'],
     dt=DT_Y,
-    lam_ewma=float(np.exp(-np.log(2) / (ewma_half_life_days * 24 * 60)))
+    lam_ewma=float(np.exp(-np.log(2) / (ewma_half_life_days * 24 * 60 / 5)))
 )
 print("---- Heston (variance) params ----")
 print(f"kappa={heston.kappa:.6f}  theta={heston.theta:.6f}  xi={heston.xi:.6f}  rho={heston.rho:.6f}  v0={heston.v0:.6f}")
@@ -115,7 +115,7 @@ jump_train_df = df.loc[
 ].copy()
 
 # EWMA proxy for variance for the jump likelihood (shorter half-life)
-steps_per_day = 24 * 60
+steps_per_day = 24 * 60 / 5
 hl_steps_jump = jump_ewma_half_life_days * steps_per_day
 lam_jump = float(np.exp(-np.log(2) / hl_steps_jump))
 alpha_jump = 1.0 - lam_jump
@@ -200,7 +200,7 @@ real_ret = test_df['r'].values
 
 
 plt.figure()
-iterations = 25
+iterations = 1
 for i in range(iterations):
     log_ret_sim = simulate_bates(b_params, test_df)
     edges = np.histogram_bin_edges(np.concatenate([real_ret, log_ret_sim]), bins=100)

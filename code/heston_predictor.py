@@ -8,11 +8,11 @@ import src.heston_model_parameters as hm  # <-- the estimator we discussed
 # Config
 # ----------------------------
 symbol = 'BTCUSD'
-timeframe = '1m'
+timeframe = '1h'
 parquet_path = f'data/spot/ohlcv_{symbol}_{timeframe}.parquet'
 
 # Define the test window you want to analyze/compare
-test_start = pd.Timestamp('2025-07-01', tz='UTC')  # set tz=None unless your index has tz
+test_start = pd.Timestamp('2025-01-01', tz='UTC')  # set tz=None unless your index has tz
 test_end   = pd.Timestamp('2025-07-02', tz='UTC')
 
 # How much past data to use to estimate parameters (expanding window works too)
@@ -21,16 +21,19 @@ train_lookback_days = 365  # use 6 months of history prior to test_start
 ewma_half_life_days = 30
 
 # Crypto runs 24/7
-DT_Y = 1.0 / (365 * 24 * 60)   # 1 minute in "years"
+DT_Y = 1.0 * 60 / (365 * 24 * 60)   # 1 hour in "years"
 
 # ----------------------------
 # Load & prep data
 # ----------------------------
 df = pd.read_parquet(parquet_path)
-# Ensure datetime index and sorted
+# Ensure tz-aware UTC index
 if not isinstance(df.index, pd.DatetimeIndex):
     df.index = pd.to_datetime(df.index, utc=True, errors='coerce')
-df = df.sort_index()
+elif df.index.tz is None:
+    df.index = df.index.tz_localize('UTC')
+else:
+    df.index = df.index.tz_convert('UTC')
 
 # Compute returns once
 df['r'] = np.log(df['close']).diff()
@@ -49,7 +52,7 @@ if len(train_df) < 2000:
 # ----------------------------
 # EWMA lambda for minute bars
 # ----------------------------
-steps_per_day = 24 * 60
+steps_per_day = 24 * 60 / 60
 half_life_steps = ewma_half_life_days * steps_per_day
 lam_minute = float(np.exp(-np.log(2) / half_life_steps))  # λ = exp(-ln2 / HL_steps)
 
@@ -110,7 +113,7 @@ def simulate_heston(params, test_df):
 
 
 
-iterations = 100
+iterations = 1
 real_ret = test_df['r'].values
 
 
@@ -124,7 +127,7 @@ for i in range(iterations):
     
 
 
-plt.hist(real_ret, bins=edges, fill=False, color='black', density=True, alpha=1, label=f'{symbol} real (1m)')
+plt.hist(real_ret, bins=edges, fill=False, color='black', density=True, alpha=1, label=f'{symbol} real ({timeframe})')
 x = np.linspace(mean - 4*std, mean + 4*std, 100)
 y = (1/(std * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x - mean) / std) ** 2)
 plt.plot(x, y, label='Normal Distribution', color='red', linewidth=0.5, linestyle='--')    
